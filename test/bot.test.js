@@ -491,6 +491,179 @@ describe('Bot', function () {
       .should.have.been.calledWith('#irc', expected);
   });
 
+  it('should prefix Discord replies sent to IRC with the replied author from raw data', function () {
+    const text = 'reply text';
+    const message = {
+      id: 'reply-message-id',
+      content: text,
+      mentions: { users: [] },
+      channel: {
+        name: 'discord'
+      },
+      author: {
+        username: 'otherauthor',
+        id: 'not bot id'
+      },
+      guild: this.guild
+    };
+
+    this.bot.discord.emit('raw', {
+      t: 'MESSAGE_CREATE',
+      d: {
+        id: message.id,
+        referenced_message: {
+          author: {
+            username: 'originalauthor',
+            id: 'original author id'
+          },
+          member: {
+            nick: 'Original Nick'
+          }
+        }
+      }
+    });
+    this.bot.discord.emit('message', message);
+
+    const expected = `<\u000304${message.author.username}\u000f> Original Nick: ${text}`;
+    ClientStub.prototype.say.should.have.been.calledWith('#irc', expected);
+  });
+
+  it('should prefix Discord replies sent to IRC with the replied author from cache', function () {
+    const text = 'reply text';
+    const message = {
+      content: text,
+      mentions: { users: [] },
+      reference: {
+        messageID: 'referenced-message-id'
+      },
+      channel: {
+        name: 'discord',
+        messages: {
+          cache: {
+            get: id => (id === 'referenced-message-id' ? {
+              author: {
+                username: 'cachedauthor',
+                id: 'cached author id'
+              }
+            } : null)
+          }
+        }
+      },
+      author: {
+        username: 'otherauthor',
+        id: 'not bot id'
+      },
+      guild: this.guild
+    };
+
+    this.bot.sendToIRC(message);
+
+    const expected = `<\u000304${message.author.username}\u000f> cachedauthor: ${text}`;
+    ClientStub.prototype.say.should.have.been.calledWith('#irc', expected);
+  });
+
+  it('should prefix Discord replies to bridged bot messages with the bridged author', function () {
+    const text = 'reply text';
+    const message = {
+      content: text,
+      mentions: { users: [] },
+      reference: {
+        messageID: 'referenced-message-id'
+      },
+      channel: {
+        name: 'discord',
+        messages: {
+          cache: {
+            get: id => (id === 'referenced-message-id' ? {
+              content: '**<ircuser>** original bridged text',
+              author: {
+                username: 'Reactiflux',
+                id: this.bot.discord.user.id
+              }
+            } : null)
+          }
+        }
+      },
+      author: {
+        username: 'otherauthor',
+        id: 'not bot id'
+      },
+      guild: this.guild
+    };
+
+    this.bot.sendToIRC(message);
+
+    const expected = `<\u000304${message.author.username}\u000f> ircuser: ${text}`;
+    ClientStub.prototype.say.should.have.been.calledWith('#irc', expected);
+  });
+
+  it('should prefix Discord replies sent to IRC with a fetched replied author', async function () {
+    const text = 'reply text';
+    const message = {
+      content: text,
+      mentions: { users: [] },
+      reference: {
+        messageID: 'referenced-message-id'
+      },
+      channel: {
+        name: 'discord',
+        messages: {
+          fetch: sandbox.stub().resolves({
+            author: {
+              username: 'fetchedauthor',
+              id: 'fetched author id'
+            }
+          })
+        }
+      },
+      author: {
+        username: 'otherauthor',
+        id: 'not bot id'
+      },
+      guild: this.guild
+    };
+
+    await this.bot.sendToIRCWithFetches(message);
+
+    const expected = `<\u000304${message.author.username}\u000f> fetchedauthor: ${text}`;
+    message.channel.messages.fetch.should.have.been.calledWith('referenced-message-id');
+    ClientStub.prototype.say.should.have.been.calledWith('#irc', expected);
+  });
+
+  it('should prefix Discord replies to fetched bridged bot messages with the bridged author', async function () {
+    const text = 'reply text';
+    const message = {
+      content: text,
+      mentions: { users: [] },
+      reference: {
+        messageID: 'referenced-message-id'
+      },
+      channel: {
+        name: 'discord',
+        messages: {
+          fetch: sandbox.stub().resolves({
+            content: '**<fetchedircuser>** original bridged text',
+            author: {
+              username: 'Reactiflux',
+              id: this.bot.discord.user.id
+            }
+          })
+        }
+      },
+      author: {
+        username: 'otherauthor',
+        id: 'not bot id'
+      },
+      guild: this.guild
+    };
+
+    await this.bot.sendToIRCWithFetches(message);
+
+    const expected = `<\u000304${message.author.username}\u000f> fetchedircuser: ${text}`;
+    message.channel.messages.fetch.should.have.been.calledWith('referenced-message-id');
+    ClientStub.prototype.say.should.have.been.calledWith('#irc', expected);
+  });
+
   it('should use #deleted-channel when referenced channel fails to exist', function () {
     const text = '<#1235>';
     const message = {
